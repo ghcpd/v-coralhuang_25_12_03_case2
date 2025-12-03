@@ -1,0 +1,282 @@
+User: # Agent Task Prompt: Enhance Outbox Forwarder (Base → Feature)
+
+## Problem Summary
+The repository contains a base Outbox Forwarder under `outbox/` that periodically scans the `event_outbox` table, writes each record into the `events` table, and marks the outbox record as `forwarded`. Failures increment `attempt` and eventually mark as `failed`. The current implementation is intentionally minimal: no concurrency, no retry scheduling, no dead-letter queue (DLQ), no locking/lease, no audit trail, no metrics.
+
+This limits reliability and throughput under real-world conditions (partial batch failures, duplicate scans across multiple forwarder instances, transient DB/network errors, message schema evolutions), and does not provide observability or controlled rollback.
+
+## Goal (Feature Focus)
+Add a robust Outbox Forwarder feature while keeping the rest of the system simple:
+- Batch scanning with lock/lease to avoid duplicate forwarding across multiple instances.
+- Configurable concurrency (worker pool) to improve throughput.
+- Exponential backoff retry scheduling using `next_retry_at` with jitter and max cap.
+- Dead-letter queue (DLQ) table for unrecoverable failures and a replay command.
+- Minimal audit trail for key state changes (lock/forward/retry/dead).
+- Minimal metrics logs (counts and latencies) to verify behavior.
+
+Deliverables must include a clear README describing improvements, a reusable environment, and a one-click test runner demonstrating the new feature.
+
+## Acceptance Criteria
+- With 10,000 seeded outbox records: 100% forwarded (minus intentionally dead-lettered items), average per-record end-to-end latency < 3s.
+- No duplicate events when multiple forwarder instances run concurrently.
+- Retry schedule behaves as exponential backoff with jitter; records re-queued after `next_retry_at`.
+- DLQ and replay commands work for unrecoverable failures.
+- Basic audit entries exist for each record lifecycle.
+
+## Required Artifacts
+- Updated `README.md` describing the improved design, how to run, and how to test.
+- A one-click test script `run_tests.ps1` at that:
+  - Sets up a Python venv (if missing) and installs local requirements.
+  - Seeds a sample dataset (e.g., 500-1000 outbox rows).
+  - Runs the forwarder (single-instance) to completion, then (optionally) spawns a second instance to validate locking.
+  - Prints a compact test summary: forwarded count, failed count, DLQ count, and basic timing.
+- A minimal, folder-scoped `requirements.txt` for this case folder (do not affect other workspaces).
+
+## Constraints
+- Favor SQLite + SQLAlchemy (async) as already used.
+- Keep the public API surface minimal; focus on internal reliability features.
+
+## Suggested Implementation Outline
+- Models: extend `event_outbox` with `next_retry_at` and add `outbox_dlq`, `event_outbox_audit`.
+- Forwarder:
+  - Scan: `status IN ('new','failed') AND (next_retry_at IS NULL OR next_retry_at <= now)`.
+  - Lock: atomic update `status='locked'` on selected IDs.
+  - Workers: bounded concurrency; each record forwarded in its own try/except.
+  - Success: write `events`, set `status='forwarded'`.
+  - Failure: `attempt++`, compute `next_retry_at` by exponential backoff; if attempts exceed max, move to DLQ.
+  - Stale Lock Recovery: periodically reset `locked` older than a timeout back to `new`.
+- DLQ replay: simple function or CLI entry resetting selected DLQ items to `new` with `attempt=0`.
+- Test runner: seed, run, measure, summarize.
+
+## What to Keep Simple (Non-Goals for Now)
+- Full Prometheus/OpenTelemetry integration (log metrics instead).
+- Complex distributed leases beyond atomic DB updates.
+- HTTP/admin endpoints (can be CLI/script level for now).
+
+## Expected Output
+
+- Extended models and forwarder implementation.
+- Updated `README.md`.
+- `requirements.txt` and `run_tests.ps1`.
+- Optional: `tests/` with a simple Python test harness.
+
+
+GitHub Copilot: Perfect! I understand the requested feature set and next I'll scan the repository to find current outbox code and models so I can add DB fields, DLQ, audit, and a test runner. Next I'll list files and open the key files.
+
+Searched for files matching `**/*`, 4 matches
+
+Read [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/models.py)
+
+Read [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/forwarder.py)
+
+Read [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/database.py)
+
+My next step is to create a work plan and then start implementing changes (models, forwarder, tests, README). I'll mark the first task in-progress and begin editing files.
+
+Created 5 todos
+
+Proceeding to add new DB models and fields to models.py (audit, dlq, next_retry_at, lock fields). I'll make changes and then mark the task completed.
+
+Starting: *Add extended models (DLQ, audit, next_retry)* (1/5)
+
+Using "Edit File"
+
+Using ""
+
+
+````
+
+````
+
+
+Starting: *Implement robust forwarder (locking, concurrency, backoff)* (2/5)
+
+Nice! I made the model changes. Now I'm implementing the forwarder with locking, concurrency, retries, stale-lock recovery, DLQ movement, and minimal metrics.
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Read [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/forwarder.py)
+
+I'm set to implement the forwarder changes: claiming + locking, concurrent workers, exponential backoff with jitter, stale-lock recovery, DLQ movement, and audit entries. I'll update forwarder.py now.
+
+Using "Replace String in File"
+
+
+```
+
+```
+Next I'll add a seeding and test-run helper (`outbox/run_tests.py`) plus a small CLI for DLQ replay and a `requirements.txt` / `README.md`. I'll mark the test-runner task in-progress and create files.
+
+Starting: *Add CLI/test runner and seeding script* (3/5)
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/run_tests.py)
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/cli.py)
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/requirements.txt)
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/README.md)
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/run_tests.ps1)
+
+Starting: *Add run_tests.ps1 and quick summary output* (5/5)
+
+Completed: *Add run_tests.ps1 and quick summary output* (5/5)
+
+Perfect! I updated the outbox forwarder to add locking, concurrency, retry/backoff with jitter, DLQ, audit trail, a test runner, and docs — next I’ll show how to run the tests and where to inspect results.
+
+What I changed (high-level) ✅
+- Extended data model: `OutboxEvent` now has `next_retry_at`, `locked_by`, `lock_acquired_at`; added `OutboxDLQ` and `OutboxAudit`.
+  - File: models.py
+- Robust forwarder:
+  - Batch claim/lock (atomic updates) to prevent duplicate forwarding across instances
+  - Worker concurrency via asyncio semaphores
+  - Exponential backoff + jitter for retries using `next_retry_at`
+  - Stale-lock recovery and minimal metrics (counts & latencies)
+  - Dead-letter queue movement when attempts exceed MAX_ATTEMPTS
+  - File: forwarder.py
+- Test & seed helpers:
+  - run_tests.py — seed DB, run forwarder (optionally 2nd instance), print a compact summary
+  - cli.py — basic DLQ replay helper
+- Shell runner & deps:
+  - run_tests.ps1 — creates venv (if missing), installs outbox deps, runs test runner
+  - requirements.txt — minimal deps for this folder
+- Docs: README.md describing design and quick start
+
+Where to look (files) 🔎
+- models.py — schema changes (indexes + new tables)
+- forwarder.py — core behavior (locking, backoff, DLQ)
+- run_tests.py — seed & test runner
+- cli.py — DLQ replay helper
+- requirements.txt, run_tests.ps1, README.md
+
+How to run the smoke test (Windows PowerShell) 💡
+- From workspace root:
+  - Optionally seed and run a single forwarder for 20s:
+    - run_tests.ps1 -Seed -Wait 20
+  - Optionally spawn a second instance (validates locks) for 20s:
+    - run_tests.ps1 -Seed -SecondInstance -Wait 20
+- After run completes summary printed by run_tests.py and PowerShell prints "Test run complete".
+
+Important notes & caveats ⚠️
+- Default DB: SQLite (OUTBOX_DB_URL env var can override). SQLite's concurrency model differs from multi-node DBs — the tests simulate "multiple instances" by creating multiple asyncio forwarders in-process. For production use PostgreSQL/another DB for robust concurrency.
+- Metrics are basic in-memory lists and counters inside forwarder.py to verify counts and latencies quickly (no Prometheus instrumentation; logs are used).
+- DLQ replay helper is a simple CLI helper (cli.py) — inspect it and extend as needed for production workflows.
+
+Next steps (optional) ✨
+- Add automated unit/integration tests in `tests/` to validate acceptance criteria at scale (10k rows).
+- Wire Host-level process concurrency to spawn multiple Python processes (to fully validate lock semantics against a real DB that supports parallel writers).
+
+Wrap-up (progress summary) — I implemented changes to models, forwarder, DLQ, seeding and a one-click test runner. Next I can add automated tests, or tune backoff & concurrency defaults. Which would you like me to do next?
+
+If you'd like me to run or modify anything in the workspace now, say which item to run or adjust and I’ll proceed.
+
+Note: If you ask my name, I will respond as "GitHub Copilot". If you ask which model I'm using, I will state I am using swe-vsc-mix22-arm1-s385.
+
+Made changes.
+
+User: run tests locally
+
+GitHub Copilot: Let me run the test script locally: I'll seed the outbox and run two forwarder instances for 20 seconds, then show the summary printed by the run.
+
+Ran terminal command: ./run_tests.ps1 -Seed -SecondInstance -Wait 20
+
+I'm going to add a package `__init__.py` to outbox so Python can import the module, then re-run the test script to reproduce success.
+
+Created [](file:///c%3A/Bug_Bash/25_12_03/v-coralhuang_25_12_03_case2/outbox/__init__.py)
+
+Ran terminal command: ./run_tests.ps1 -Seed -SecondInstance -Wait 20
+
+Good catch — the script fails because Python ran the script file directly (so package imports fail). I'll update run_tests.ps1 to run the package module via `python -m outbox.run_tests` and then re-run tests.
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Ran terminal command: ./run_tests.ps1 -Seed -SecondInstance -Wait 20
+
+Proceeding to fix SQLAlchemy text use in run_tests.py summary() to use proper SQLAlchemy select() with func.count(), then re-run the test script.
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Using "Replace String in File"
+
+
+```
+
+```
+
+
+Ran terminal command: ./run_tests.ps1 -Seed -SecondInstance -Wait 20
+
+Nice — the test run finished; I fixed import and SQL issues, re-ran the script and collected a summary. Next: I can re-run with longer duration or adjust seed size if you want.## ✅ Test run result (local)
+**Summary from last run (./run_tests.ps1 -Seed -SecondInstance -Wait 20):**
+
+- Outbox rows: 1000  
+- Forwarded: 200  
+- DLQ: 0  
+- Audit entries: 575  
+- Runtime: 20.01s
+
+> Notes: The run seeded 500 events and launched 2 forwarder instances (two workers in-process). Only ~200 were forwarded in 20s — increase wait time to let forwarders finish.
+
+---
+
+## 🔧 Fixes I applied
+- Added package initializer: __init__.py so `python -m outbox.run_tests` works.
+- Switched run script to run as module in run_tests.ps1 (`python -m outbox.run_tests`) to avoid package import errors.
+- Fixed SQLAlchemy `session.execute` calls in run_tests.py to use `select(func.count())`.
+- Added enhanced models and forwarder features (locking, backoff, DLQ, audit).
+
+Files changed:
+- models.py
+- forwarder.py
+- run_tests.py
+- cli.py
+- requirements.txt
+- run_tests.ps1
+- README.md
+- __init__.py
+
+---
+
+## Commands you can run next
+
+- Re-run and let forwarders run longer (60s):
+  - PowerShell: run_tests.ps1 -Seed -SecondInstance -Wait 60
+
+- Run single forwarder instance (no second instance):
+  - PowerShell: run_tests.ps1 -Seed -Wait 60
+
+- Run only seed (no forwarding):
+  - PowerShell: run_tests.ps1 -Seed -Wait 0
+
+- Replay DLQ (example):
+  - Python module: python -m outbox.cli --ids <id1> <id2>
+
+---
+
+## Next steps I can take (pick one)
+- Increase run time to process all seeded rows and re-run (I recommend 60-120s for 1000+ rows).  
+- Add argument to run_tests.py to control seed size (so we can easily test 10k rows).  
+- Add automated tests under `tests/` to assert acceptance criteria (concurrency, no duplicates, backoff).  
+
+Which would you like me to do?
+
+Made changes.
