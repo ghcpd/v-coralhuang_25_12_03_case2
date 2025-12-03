@@ -10,13 +10,18 @@ class OutboxEvent(Base):
     id = Column(String(64), primary_key=True)
     topic = Column(String(64), nullable=False, index=True)
     payload = Column(Text, nullable=False)
-    status = Column(String(16), nullable=False, default="new")  # new|forwarded|failed
+    status = Column(String(16), nullable=False, default="new")  # new|locked|forwarded|failed|dead
     attempt = Column(Integer, nullable=False, default=0)
+    next_retry_at = Column(DateTime, nullable=True)
+    locked_at = Column(DateTime, nullable=True)
+    lock_token = Column(String(64), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
         Index("idx_outbox_status", "status"),
+        Index("idx_outbox_next_retry", "next_retry_at"),
+        Index("idx_outbox_status_retry", "status", "next_retry_at"),
     )
 
 class Event(Base):
@@ -24,4 +29,23 @@ class Event(Base):
     id = Column(String(64), primary_key=True)
     topic = Column(String(64), nullable=False, index=True)
     payload = Column(Text, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+class OutboxDLQ(Base):
+    __tablename__ = "outbox_dlq"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    outbox_id = Column(String(64), nullable=False, index=True)
+    topic = Column(String(64), nullable=False, index=True)
+    payload = Column(Text, nullable=False)
+    attempt = Column(Integer, nullable=False, default=0)
+    error = Column(Text, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+class OutboxAudit(Base):
+    __tablename__ = "event_outbox_audit"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    outbox_id = Column(String(64), nullable=False, index=True)
+    action = Column(String(16), nullable=False)
+    detail = Column(Text, nullable=True)
+    lock_token = Column(String(64), nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
