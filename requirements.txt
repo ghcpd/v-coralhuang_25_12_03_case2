@@ -1,0 +1,4 @@
+SQLAlchemy>=1.4.0
+aiosqlite
+pytest
+pytest-asyncio
