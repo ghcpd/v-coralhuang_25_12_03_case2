@@ -1,0 +1,8 @@
+# Agent Task Prompt: Enhance Outbox Forwarder (Base → Feature)
+
+## Problem Summary
+The repository contains a base Outbox Forwarder under `outbox/` that periodically scans the `event_outbox` table, writes each record into the `events` table, and marks the outbox record as `forwarded`. Failures increment `attempt` and eventually mark as `failed`. The current implementation is intentionally minimal: no concurrency, no retry scheduling, no dead-letter queue (DLQ), no locking/lease, no audit trail, no metrics.
+
+This limits reliability and throughput under real-world conditions (partial batch failures, duplicate scans across multiple forwarder instances, transient DB/network errors, message schema evolutions), and does not provide observability or controlled rollback.
+
+## Goal (Feature Focus)
