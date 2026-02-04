@@ -1,0 +1,4 @@
+sqlalchemy[asyncio]>=2.0
+aiosqlite>=0.19
+pytest>=7.4
+pytest-asyncio>=0.23
